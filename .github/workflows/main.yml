@@ -19,8 +19,13 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[testing,docs,styleguide]"
 
-      - name: Run tests
-        run: python -m pytest --cov --cov-branch --cov-report=xml
+      - name: Rodar testes com cobertura
+        run: |
+          python -m coverage run --source=wagtail runtests.py
+
+      - name: Gerar relatório de cobertura XML
+        run: |
+          coverage xml
 
       - name: Upload results to Codecov
         uses: codecov/codecov-action@v5
