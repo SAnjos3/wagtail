@@ -775,6 +775,10 @@ class TestSetCollectionPrivacy(CollectionInstanceTestUtils, WagtailTestUtils, Te
         super().setUp()
         self.login()
 
+        self.url = reverse(
+            "wagtailadmin_collections:set_privacy", args=(self.finance_collection.id,)
+        )
+
     def get(self, collection_id, params={}):
         return self.client.get(
             reverse("wagtailadmin_collections:set_privacy", args=(collection_id,)),
@@ -822,6 +826,76 @@ class TestSetCollectionPrivacy(CollectionInstanceTestUtils, WagtailTestUtils, Te
             args=(self.root_collection.pk,),
         )
         self.assertEqual(link.get("href"), parent_edit_url)
+    
+    def test_CT1_mcdc_linha_1_TT(self):
+        """
+        Testa a Linha 1 da Tabela Verdade (T, T) -> TRUE
+        ...
+        """
+        # Mude "private" para "password" para que o form seja válido (C1 = True)
+        data = {"restriction_type": "password", "password": "testpassword"}  # C1 = True
+        # C2 = True (padrão, sem restrições ancestrais criadas)
+
+        response = self.client.post(self.url, data)
+
+        # Verifica a Saída (Sucesso)
+        self.assertEqual(response.status_code, 200)
+        self.assertJSONEqual(
+            response.content.decode(),
+            # A restrição "password" não é "is_public"
+            {"step": "set_privacy_done", "is_public": False},
+        )
+        self.assertTrue(
+            CollectionViewRestriction.objects.filter(
+                collection=self.finance_collection, restriction_type="password"
+            ).exists()
+        )
+
+    def test_CT2_mcdc_linha_2_TF(self):
+        """
+        Testa a Linha 2 da Tabela Verdade (T, F) -> FALSE
+        ...
+        """
+        # C2 = False (Setup: Criar uma restrição no ancestral)
+        CollectionViewRestriction.objects.create(
+            collection=self.root_collection, restriction_type="private"
+        )
+        
+        # Mude "public" para "login" para que o form seja válido (C1 = True)
+        data = {"restriction_type": "login"}  # C1 = True
+
+        response = self.client.post(self.url, data)
+
+        # Verifica a Saída (Falha)
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(
+            response, "wagtailadmin/collection_privacy/ancestor_privacy.html"
+        )
+        self.assertFalse(
+            CollectionViewRestriction.objects.filter(
+                collection=self.finance_collection
+            ).exists()
+        )
+
+    def test_CT3_mcdc_linha_3_FT(self):
+        """
+        Testa a Linha 3 da Tabela Verdade (F, T) -> FALSE
+        - C1 (form.is_valid): False
+        - C2 (not ancestor_exists): True (ou seja, NÃO HÁ restrição ancestral)
+        - Resultado Esperado: O bloco 'if' NÃO é executado.
+        """
+        data = {"restriction_type": "INVALID_CHOICE"}  # C1 = False
+        # C2 = True (padrão, sem restrições ancestrais)
+
+        response = self.client.post(self.url, data)
+
+        # Verifica a Saída (Falha)
+        # A lógica deve pular o 'if' e cair no 'else' do 'if request.method == "POST":',
+        # re-renderizando o formulário com erros.
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "wagtailadmin/shared/set_privacy.html")
+        # Verifica se a mensagem de erro do formulário está presente
+        self.assertContains(response, "Select a valid choice")
 
 
 class TestCollectionPrivacyStatusLabels(WagtailTestUtils, TestCase):
